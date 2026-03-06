@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Flappy Shrek - Mega Big Edition</title>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #1a1a1a; display: flex; justify-content: center; align-items: center; touch-action: manipulation; font-family: sans-serif; }
+        canvas { display: block; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        #ui-layer { position: absolute; top: 15px; left: 15px; color: white; pointer-events: none; text-shadow: 2px 2px 5px #000; z-index: 10; }
+        .score-box { display: block; background: rgba(0, 0, 0, 0.4); padding: 8px 12px; border-radius: 8px; font-size: 16px; }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div class="score-box">
+            <span id="scoreLabel">Точки: 0</span>
+            <span id="highScoreLabel">Рекорд: 0</span>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        const images = {};
+        const sources = {
+            shrek: 'shrek.png',
+            truba_down: 'truba.png',
+            truba_up: 'truba2.png',
+            bg: 'swamp_background.jpg'
+        };
+
+        for (let key in sources) {
+            images[key] = new Image();
+            images[key].src = sources[key];
+        }
+
+        // --- НАСТРОЙКИ ЗА МЕГА ШРЕК И ТРУДНОСТ ---
+        let shrek = { x: 50, y: 0, size: 0, velocity: 0, gravity: 0.38, jump: -8.0 };
+        let pipes = [];
+        let pipeWidth, score, gameOver, gameStarted, frame;
+        let highScore = localStorage.getItem("shrekHigh") || 0;
+
+        function reset() {
+            shrek.y = canvas.height / 2;
+            shrek.velocity = 0;
+            // МЕГА ШРЕК: 30% от ширината
+            shrek.size = canvas.width * 0.30; 
+            // ДЕБЕЛИ ТРЪБИ: 25% от ширината
+            pipeWidth = canvas.width * 0.25; 
+            pipes = [];
+            score = 0;
+            frame = 0;
+            gameOver = false;
+            document.getElementById("highScoreLabel").innerText = "Рекорд: " + highScore;
+            document.getElementById("scoreLabel").innerText = "Точки: 0";
+        }
+
+        function loop() {
+            if (!gameStarted) { drawStart(); return; }
+            if (gameOver) { drawGameOver(); return; }
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        function update() {
+            shrek.velocity += shrek.gravity;
+            shrek.y += shrek.velocity;
+
+            // МНОГО НАЧЕСТО: генериране на всеки 60 кадъра
+            if (frame % 60 === 0) {
+                // Малко по-голяма пролука (33%), за да може огромният Шрек да мине
+                let gap = canvas.height * 0.33; 
+                let minTopH = canvas.height * 0.05;
+                let maxTopH = canvas.height * 0.50;
+                let topH = Math.random() * (maxTopH - minTopH) + minTopH;
+                pipes.push({ x: canvas.width, topH: topH, gap: gap, passed: false });
+            }
+
+            pipes.forEach((p) => {
+                p.x -= 4.2; // Бърза скорост
+                
+                // L-образен хитбокс, адаптиран за новия размер
+                let padding = shrek.size * 0.15;
+                let leftBox = {
+                    l: shrek.x + padding,
+                    r: shrek.x + (shrek.size * 0.55),
+                    t: shrek.y + padding,
+                    b: shrek.y + shrek.size - padding
+                };
+
+                let bottomRightBox = {
+                    l: shrek.x + (shrek.size * 0.55),
+                    r: shrek.x + shrek.size - padding,
+                    t: shrek.y + (shrek.size * 0.55),
+                    b: shrek.y + shrek.size - padding
+                };
+
+                let bY = p.topH + p.gap;
+
+                function checkHit(box) {
+                    return (box.r > p.x && box.l < p.x + pipeWidth && (box.t < p.topH || box.b > bY));
+                }
+
+                if (checkHit(leftBox) || checkHit(bottomRightBox)) {
+                    endGame();
+                }
+
+                if (!p.passed && p.x < shrek.x) {
+                    score++;
+                    p.passed = true;
+                    document.getElementById("scoreLabel").innerText = "Точки: " + score;
+                }
+            });
+
+            pipes = pipes.filter(p => p.x > -pipeWidth - 100);
+            if (shrek.y + shrek.size > canvas.height || shrek.y < -150) endGame();
+            frame++;
+        }
+
+        function draw() {
+            if (images.bg.complete && images.bg.naturalWidth > 0) {
+                ctx.drawImage(images.bg, 0, 0, canvas.width, canvas.height);
+            } else {
+                ctx.fillStyle = "#27ae60"; ctx.fillRect(0,0, canvas.width, canvas.height);
+            }
+
+            pipes.forEach(p => {
+                let bY = p.topH + p.gap;
+                if (images.truba_up.complete) ctx.drawImage(images.truba_up, p.x, 0, pipeWidth, p.topH);
+                if (images.truba_down.complete) ctx.drawImage(images.truba_down, p.x, bY, pipeWidth, canvas.height - bY);
+            });
+
+            if (images.shrek.complete) {
+                ctx.drawImage(images.shrek, shrek.x, shrek.y, shrek.size, shrek.size);
+            }
+        }
+
+        function drawStart() {
+            draw();
+            ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0,0,canvas.width, canvas.height);
+            ctx.fillStyle = "white"; ctx.textAlign = "center"; ctx.font = "bold 28px Arial";
+            ctx.fillText("MEGA SHREK IS HERE", canvas.width/2, canvas.height/2 - 20);
+            ctx.font = "20px Arial"; ctx.fillText("Докосни за старт", canvas.width/2, canvas.height/2 + 30);
+        }
+
+        function drawGameOver() {
+            ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(0,0,canvas.width, canvas.height);
+            ctx.fillStyle = "white"; ctx.textAlign = "center"; ctx.font = "bold 32px Arial";
+            ctx.fillText("КРАЙ!", canvas.width/2, canvas.height/2 - 20);
+            ctx.font = "22px Arial"; ctx.fillText("РЕСТАРТ", canvas.width/2, canvas.height/2 + 40);
+        }
+
+        function endGame() {
+            gameOver = true;
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem("shrekHigh", highScore);
+            }
+        }
+
+        function press() {
+            if (!gameStarted) { gameStarted = true; reset(); loop(); }
+            else if (gameOver) { reset(); loop(); }
+            else { shrek.velocity = shrek.jump; }
+        }
+
+        window.addEventListener("mousedown", (e) => { e.preventDefault(); press(); });
+        window.addEventListener("touchstart", (e) => { e.preventDefault(); press(); }, {passive: false});
+        window.addEventListener("keydown", (e) => { if(e.code === "Space") press(); });
+
+        reset();
+        setTimeout(drawStart, 500);
+    </script>
+</body>
+</html>
